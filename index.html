@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>VIP Chatting Service</title>
+
+  <!-- Socket.io Client Library -->
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+
+  <style>
+    :root {
+      --bg-main: #0f172a; --bg-card: #1e293b; --bg-input: #0f172a;
+      --border-color: #334155; --text-main: #f8fafc; --text-muted: #94a3b8;
+      --accent: #38bdf8; --msg-sent: #0284c7; --msg-recv: #334155; --status-online: #4ade80;
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg-main: #f1f5f9; --bg-card: #ffffff; --bg-input: #f8fafc;
+        --border-color: #e2e8f0; --text-main: #0f172a; --text-muted: #64748b;
+        --accent: #0284c7; --msg-sent: #0284c7; --msg-recv: #e2e8f0; --status-online: #22c55e;
+      }
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    html, body { width: 100vw; height: 100vh; background-color: var(--bg-main); color: var(--text-main); overflow: hidden; }
+
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(5px); display: flex; justify-content: center; align-items: center; z-index: 1000; padding: 20px; }
+    .modal { background: var(--bg-card); padding: 24px; border-radius: 16px; width: 100%; max-width: 400px; text-align: center; border: 1px solid var(--border-color); }
+    .modal h2 { margin-bottom: 8px; color: var(--accent); }
+    .modal p { color: var(--text-muted); font-size: 0.85rem; margin-bottom: 16px; }
+    .modal input { width: 100%; padding: 12px; margin-bottom: 16px; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-main); font-size: 1rem; outline: none; }
+    .avatar-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 20px; }
+    .avatar-option { font-size: 1.8rem; padding: 8px; border-radius: 10px; cursor: pointer; background: var(--bg-input); border: 2px solid var(--border-color); }
+    .avatar-option.selected { border-color: var(--accent); background: var(--border-color); }
+
+    .app-container { width: 100vw; height: 100vh; display: flex; overflow: hidden; }
+    .sidebar { width: 350px; height: 100%; background: var(--bg-main); border-right: 1px solid var(--border-color); display: flex; flex-direction: column; flex-shrink: 0; }
+    .user-profile-bar { padding: 16px; background: var(--bg-card); border-bottom: 1px solid var(--border-color); display: flex; align-items: center; gap: 12px; }
+    .avatar-circle { width: 42px; height: 42px; border-radius: 50%; background: var(--border-color); display: flex; justify-content: center; align-items: center; font-size: 1.4rem; flex-shrink: 0; }
+
+    .tab-bar { display: flex; background: var(--bg-card); border-bottom: 1px solid var(--border-color); }
+    .tab-btn { flex: 1; padding: 12px; text-align: center; background: none; border: none; color: var(--text-muted); font-weight: bold; cursor: pointer; font-size: 0.85rem; }
+    .tab-btn.active { color: var(--accent); border-bottom: 2px solid var(--accent); }
+
+    .search-box { padding: 10px 16px; background: var(--bg-main); }
+    .search-box input { width: 100%; padding: 8px 12px; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-main); outline: none; }
+
+    .list-container { flex: 1; overflow-y: auto; }
+    .list-item { padding: 14px 16px; border-bottom: 1px solid var(--border-color); cursor: pointer; display: flex; align-items: center; gap: 12px; }
+    .list-item:hover, .list-item.active { background: var(--bg-card); }
+    .status-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--status-online); margin-left: auto; }
+
+    .chat-area { flex: 1; height: 100%; display: flex; flex-direction: column; background: var(--bg-card); position: relative; }
+    .chat-header { padding: 12px 16px; background: var(--bg-main); border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; }
+    .back-btn { display: none; background: transparent; border: none; color: var(--accent); font-size: 1rem; font-weight: bold; cursor: pointer; margin-right: 10px; }
+    .peer-info { display: flex; align-items: center; gap: 10px; }
+    .icon-btn { background: var(--border-color); color: var(--text-main); border: none; padding: 8px 14px; border-radius: 8px; font-size: 0.9rem; font-weight: bold; cursor: pointer; transition: 0.2s; }
+    .icon-btn.active { background: var(--accent); color: #fff; }
+
+    .messages-container { flex: 1; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; background: var(--bg-main); }
+    .msg { max-width: 80%; padding: 10px 14px; border-radius: 14px; font-size: 0.95rem; line-height: 1.4; word-break: break-word; }
+    .msg.sent { background: var(--msg-sent); color: #fff; align-self: flex-end; border-bottom-right-radius: 2px; }
+    .msg.received { background: var(--msg-recv); color: var(--text-main); align-self: flex-start; border-bottom-left-radius: 2px; }
+    .msg img, .msg video { max-width: 100%; border-radius: 8px; margin-top: 4px; display: block; }
+    .msg audio { width: 100%; max-width: 240px; margin-top: 4px; display: block; }
+    .msg-system { align-self: center; background: transparent; color: var(--text-muted); font-size: 0.8rem; text-align: center; }
+
+    .chat-input { padding: 12px 16px; padding-bottom: calc(12px + env(safe-area-inset-bottom)); background: var(--bg-card); border-top: 1px solid var(--border-color); display: flex; gap: 8px; align-items: center; }
+    .chat-input input[type="text"] { flex: 1; background: var(--bg-input); border: 1px solid var(--border-color); color: var(--text-main); padding: 12px; border-radius: 8px; outline: none; font-size: 1rem; }
+    .attach-btn, .mic-btn { background: var(--border-color); color: var(--text-main); border: none; padding: 10px; border-radius: 8px; cursor: pointer; font-size: 1.1rem; }
+    .mic-btn.recording { background: #ef4444; color: white; }
+    .btn { background: var(--accent); color: #fff; border: none; padding: 10px 18px; border-radius: 8px; font-weight: bold; cursor: pointer; }
+
+    @media (max-width: 768px) {
+      .sidebar { width: 100vw; display: flex; }
+      .chat-area { width: 100vw; position: absolute; inset: 0; display: none; z-index: 10; }
+      .app-container.chat-active .sidebar { display: none; }
+      .app-container.chat-active .chat-area { display: flex; }
+      .back-btn { display: block; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="modal-overlay" id="login-modal">
+  <div class="modal">
+    <h2>VIP Chatting Service</h2>
+    <p>Set a unique handle & select your avatar</p>
+    <input type="text" id="username-input" maxlength="10" placeholder="Username (e.g. Alex)">
+    <div class="avatar-grid">
+      <div class="avatar-option selected" onclick="selectAvatar('👤', this)">👤</div>
+      <div class="avatar-option" onclick="selectAvatar('🐱', this)">🐱</div>
+      <div class="avatar-option" onclick="selectAvatar('🌸', this)">🌸</div>
+      <div class="avatar-option" onclick="selectAvatar('🔴', this)">🔴</div>
+      <div class="avatar-option" onclick="selectAvatar('🎸', this)">🎸</div>
+      <div class="avatar-option" onclick="selectAvatar('🎹', this)">🎹</div>
+      <div class="avatar-option" onclick="selectAvatar('🎮', this)">🎮</div>
+      <div class="avatar-option" onclick="selectAvatar('🐶', this)">🐶</div>
+    </div>
+    <button class="btn" style="width: 100%;" onclick="saveProfile()">Enter VIP Chat</button>
+  </div>
+</div>
+
+<div class="app-container" id="app-container">
+  <div class="sidebar">
+    <div class="user-profile-bar">
+      <div class="avatar-circle" id="my-dp">👤</div>
+      <div>
+        <h4 id="my-name-display">Me</h4>
+        <small id="connection-status" style="color: var(--status-online)">Connecting...</small>
+      </div>
+    </div>
+
+    <div class="tab-bar">
+      <button class="tab-btn active" id="tab-chats-btn" onclick="switchTab('chats')">Chats</button>
+      <button class="tab-btn" id="tab-online-btn" onclick="switchTab('online')">Online Users</button>
+    </div>
+
+    <div class="search-box" id="search-box" style="display: none;">
+      <input type="text" id="user-search-input" placeholder="Search person..." oninput="renderOnlineList()">
+    </div>
+
+    <div class="list-container" id="list-container"></div>
+  </div>
+
+  <div class="chat-area">
+    <div class="chat-header">
+      <div style="display: flex; align-items: center;">
+        <button class="back-btn" onclick="openUserList()">❮ Back</button>
+        <div class="peer-info">
+          <div class="avatar-circle" id="peer-dp">❓</div>
+          <div>
+            <h4 id="peer-name-display">Select a Chat</h4>
+            <small id="peer-status" style="color: var(--text-muted)">Offline</small>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="messages-container" id="messages-container">
+      <div class="msg msg-system">Select a user to start chatting.</div>
+    </div>
+
+    <div class="chat-input">
+      <button class="attach-btn" onclick="document.getElementById('file-input').click()">📎</button>
+      <input type="file" id="file-input" accept="image/*,video/*" style="display: none;" onchange="sendFile(this)">
+      
+      <button class="mic-btn" id="mic-btn" onclick="toggleRecord()">🎙️</button>
+
+      <input type="text" id="message-input" placeholder="Type a message..." onkeydown="if(event.key==='Enter') sendText()">
+      <button class="btn" onclick="sendText()">Send</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Render Backend URL configured automatically
+  const SOCKET_SERVER_URL = "https://vip-chat-backend.onrender.com";
+
+  let socket = null;
+  let myProfile = JSON.parse(localStorage.getItem('vip_chat_user_v8')) || null;
+  let selectedAvatar = '👤';
+  let onlineUsers = {};
+  let activePeerSocketId = null;
+  let currentTab = 'chats';
+  let mediaRecorder = null, audioChunks = [];
+  let isRecording = false;
+
+  let chatHistory = JSON.parse(localStorage.getItem('vip_chat_history_v8')) || {};
+  let recentChatsList = JSON.parse(localStorage.getItem('vip_recent_chats_v8')) || [];
+
+  if (myProfile) {
+    document.getElementById('login-modal').style.display = 'none';
+    initSocket();
+  }
+
+  function selectAvatar(emoji, el) {
+    selectedAvatar = emoji;
+    document.querySelectorAll('.avatar-option').forEach(item => item.classList.remove('selected'));
+    el.classList.add('selected');
+  }
+
+  function saveProfile() {
+    const raw = document.getElementById('username-input').value.trim();
+    const clean = raw.replace(/[^a-zA-Z0-9]/g, '').substring(0, 10);
+    if (!clean) return alert('Enter a valid username (max 10 chars)');
+
+    myProfile = { username: clean, avatar: selectedAvatar };
+    
+    const tempSocket = io(SOCKET_SERVER_URL);
+    tempSocket.emit('join', myProfile);
+
+    tempSocket.on('name_taken', (msg) => {
+      alert(msg);
+      tempSocket.disconnect();
+    });
+
+    tempSocket.on('join_success', () => {
+      tempSocket.disconnect();
+      localStorage.setItem('vip_chat_user_v8', JSON.stringify(myProfile));
+      document.getElementById('login-modal').style.display = 'none';
+      initSocket();
+    });
+  }
+
+  function initSocket() {
+    socket = io(SOCKET_SERVER_URL);
+
+    socket.on('connect', () => {
+      document.getElementById('connection-status').innerText = 'Online';
+      socket.emit('join', myProfile);
+    });
+
+    document.getElementById('my-dp').innerText = myProfile.avatar;
+    document.getElementById('my-name-display').innerText = "@" + myProfile.username;
+
+    socket.on('update_users', (users) => {
+      onlineUsers = {};
+      users.forEach(u => {
+        if (u.username !== myProfile.username.toLowerCase()) {
+          onlineUsers[u.socketId] = u;
+        }
+      });
+      renderCurrentTab();
+    });
+
+    socket.on('chat_message', (data) => {
+      saveMessage(data.from, data.content, 'received', data.msgType);
+      if (activePeerSocketId && onlineUsers[activePeerSocketId]?.username === data.from) {
+        renderMessages();
+      }
+      renderCurrentTab();
+    });
+  }
+
+  function switchTab(tab) {
+    currentTab = tab;
+    document.getElementById('tab-chats-btn').classList.toggle('active', tab === 'chats');
+    document.getElementById('tab-online-btn').classList.toggle('active', tab === 'online');
+    document.getElementById('search-box').style.display = tab === 'online' ? 'block' : 'none';
+    renderCurrentTab();
+  }
+
+  function renderCurrentTab() {
+    if (currentTab === 'chats') renderChatsList();
+    else renderOnlineList();
+  }
+
+  function renderChatsList() {
+    const list = document.getElementById('list-container');
+    list.innerHTML = '';
+    if (recentChatsList.length === 0) {
+      list.innerHTML = `<div style="padding: 16px; color: var(--text-muted); font-size: 0.85rem; text-align: center;">No recent chats. Search online users to start!</div>`;
+      return;
+    }
+
+    recentChatsList.forEach(u => {
+      const logs = chatHistory[u] || [];
+      const lastMsg = logs.length > 0 ? (logs[logs.length - 1].msgType === 'text' ? logs[logs.length - 1].content : `[${logs[logs.length - 1].msgType}]`) : 'No messages';
+      
+      const item = document.createElement('div');
+      item.className = `list-item ${activePeerSocketId && onlineUsers[activePeerSocketId]?.username === u ? 'active' : ''}`;
+      item.innerHTML = `
+        <div class="avatar-circle">💬</div>
+        <div style="flex:1; overflow:hidden;">
+          <b>@${u}</b>
+          <div style="font-size:0.75rem; color:var(--text-muted); text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">${lastMsg}</div>
+        </div>
+      `;
+      item.onclick = () => {
+        const foundSocketId = Object.keys(onlineUsers).find(sId => onlineUsers[sId].username === u);
+        selectUser(foundSocketId || null, u, '👤');
+      };
+      list.appendChild(item);
+    });
+  }
+
+  function renderOnlineList() {
+    const list = document.getElementById('list-container');
+    list.innerHTML = '';
+    const filter = document.getElementById('user-search-input').value.toLowerCase();
+    const users = Object.values(onlineUsers).filter(u => u.username.toLowerCase().includes(filter));
+
+    if (users.length === 0) {
+      list.innerHTML = `<div style="padding: 16px; color: var(--text-muted); font-size: 0.85rem; text-align: center;">No online users found.</div>`;
+      return;
+    }
+
+    users.forEach(u => {
+      const item = document.createElement('div');
+      item.className = `list-item ${activePeerSocketId === u.socketId ? 'active' : ''}`;
+      item.innerHTML = `
+        <div class="avatar-circle">${u.avatar}</div>
+        <div><b>@${u.username}</b></div>
+        <div class="status-dot"></div>
+      `;
+      item.onclick = () => selectUser(u.socketId, u.username, u.avatar);
+      list.appendChild(item);
+    });
+  }
+
+  function selectUser(socketId, username, avatar) {
+    activePeerSocketId = socketId;
+    document.getElementById('peer-name-display').innerText = "@" + username;
+    document.getElementById('peer-dp').innerText = avatar;
+    document.getElementById('peer-status').innerText = socketId ? 'Online' : 'Offline';
+    document.getElementById('app-container').classList.add('chat-active');
+    
+    renderCurrentTab();
+    renderMessages();
+  }
+
+  function openUserList() { document.getElementById('app-container').classList.remove('chat-active'); }
+
+  function sendText() {
+    const input = document.getElementById('message-input');
+    const text = input.value.trim();
+    if (!text || !activePeerSocketId) return;
+
+    socket.emit('chat_message', {
+      toSocketId: activePeerSocketId,
+      content: text,
+      msgType: 'text'
+    });
+
+    const targetUser = onlineUsers[activePeerSocketId].username;
+    saveMessage(targetUser, text, 'sent', 'text');
+    renderMessages();
+    renderCurrentTab();
+    input.value = '';
+  }
+
+  function sendFile(input) {
+    const file = input.files[0];
+    if (!file || !activePeerSocketId) return;
+
+    const reader = new FileReader();
+    reader.onload = e => {
+      const base64Data = e.target.result;
+      const isVideo = file.type.startsWith('video/');
+      const msgType = isVideo ? 'video' : 'image';
+
+      socket.emit('chat_message', {
+        toSocketId: activePeerSocketId,
+        content: base64Data,
+        msgType: msgType
+      });
+
+      const targetUser = onlineUsers[activePeerSocketId].username;
+      saveMessage(targetUser, base64Data, 'sent', msgType);
+      renderMessages();
+      renderCurrentTab();
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function toggleRecord() {
+    const micBtn = document.getElementById('mic-btn');
+    if (!isRecording) {
+      navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+        mediaRecorder = new MediaRecorder(stream);
+        audioChunks = [];
+        mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+        mediaRecorder.onstop = () => {
+          const blob = new Blob(audioChunks, { type: 'audio/webm' });
+          const reader = new FileReader();
+          reader.onload = e => {
+            const base64Audio = e.target.result;
+            if (activePeerSocketId) {
+              socket.emit('chat_message', {
+                toSocketId: activePeerSocketId,
+                content: base64Audio,
+                msgType: 'audio'
+              });
+              const targetUser = onlineUsers[activePeerSocketId].username;
+              saveMessage(targetUser, base64Audio, 'sent', 'audio');
+              renderMessages();
+              renderCurrentTab();
+            }
+          };
+          reader.readAsDataURL(blob);
+        };
+        mediaRecorder.start();
+        isRecording = true;
+        micBtn.classList.add('recording');
+      });
+    } else {
+      mediaRecorder.stop();
+      isRecording = false;
+      micBtn.classList.remove('recording');
+    }
+  }
+
+  function saveMessage(peerUser, content, type, msgType) {
+    if (!chatHistory[peerUser]) chatHistory[peerUser] = [];
+    chatHistory[peerUser].push({ content, type, msgType });
+    localStorage.setItem('vip_chat_history_v8', JSON.stringify(chatHistory));
+
+    recentChatsList = recentChatsList.filter(u => u !== peerUser);
+    recentChatsList.unshift(peerUser);
+    localStorage.setItem('vip_recent_chats_v8', JSON.stringify(recentChatsList));
+  }
+
+  function renderMessages() {
+    const container = document.getElementById('messages-container');
+    container.innerHTML = '';
+    if (!activePeerSocketId) return;
+
+    const targetUser = onlineUsers[activePeerSocketId]?.username;
+    const logs = chatHistory[targetUser] || [];
+    logs.forEach(m => {
+      const div = document.createElement('div');
+      div.className = `msg ${m.type}`;
+      
+      if (m.msgType === 'image') {
+        div.innerHTML = `<img src="${m.content}" />`;
+      } else if (m.msgType === 'audio') {
+        div.innerHTML = `<audio controls src="${m.content}"></audio>`;
+      } else if (m.msgType === 'video') {
+        div.innerHTML = `<video controls src="${m.content}"></video>`;
+      } else {
+        div.innerText = m.content;
+      }
+      container.appendChild(div);
+    });
+    container.scrollTop = container.scrollHeight;
+  }
+</script>
+</body>
+</html>
